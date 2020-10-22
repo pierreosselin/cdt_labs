@@ -9,7 +9,7 @@ class GaussianProcess():
 
     def __init__(self, kernel, noise = 0.):
         """
-        Parameter of the Gaussian process.
+        Parameter of the Gaussian Process.
 
         Args:
             mean : considered 0
