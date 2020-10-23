@@ -2,7 +2,7 @@
 
 import numpy as np
 from scipy.spatial import distance_matrix
-
+from scipy.special import gamma, kv
 
 class Kernel():
     """Class to implement Kernel Functions"""
@@ -162,3 +162,93 @@ class Periodic(Kernel):
         """Return the parameters of the kernel"""
 
         return [self.lengthscale, self.period, self.var]
+
+class Matern(Kernel):
+    """Instantiate a Matern Kernel
+
+    Args:
+        l : lengthscale
+        p : period
+        var : variance
+
+    """
+
+    def __init__(self, l = 1., mu = 1/2, var = 1.):
+        super().__init__()
+        self.lengthscale = l
+        self.mu = mu
+        self.var = var
+        self.n_params = 3
+
+    def compute_covariance(self, X, X_star = np.array([])):
+        """Compute Covariance Matrix for the Periodic kernel K(X,X) or K(X, X_star)
+
+        Args:
+            X (n x p numpy matrix) : Data on which to compute
+            X_star (optional, n x p numpy matrix) : Second dataset
+        """
+
+        if X_star.shape[0]:
+            K_ = distance_matrix(X, X_star)
+        else:
+            K_ = distance_matrix(X, X)
+
+        part1 = 2 ** (1 - self.mu) / gamma(self.mu)
+        part2 = (np.sqrt(2 * self.mu) * K_ / self.lengthscale) ** self.mu
+        part3 = kv(self.mu, np.sqrt(2 * self.mu) * K_ / self.lengthscale)
+        return ((self.var)**2) * part1 * part2 * part3
+
+    def set_values(self, values):
+        """Compute Updates kernel for Periodic Kernel"""
+
+        kernel = Periodic(values[0], values[1], values[2])
+        return kernel
+
+    def get_values(self):
+        """Return the parameters of the kernel"""
+
+        return [self.lengthscale, self.period, self.var]
+
+class RQ(Kernel):
+    """Instantiate a Rational Quadratic Kernel
+
+    Args:
+        l : lengthscale
+        alpha : exponent
+        var : variance
+
+    """
+
+    def __init__(self, l = 1., alpha = 1., var = 1.):
+        super().__init__()
+        self.lengthscale = l
+        self.alpha = l
+        self.var = var
+        self.n_params = 3
+
+    def compute_covariance(self, X, X_star = np.array([])):
+        """Compute Covariance Matrix for the Periodic kernel K(X,X) or K(X, X_star)
+
+        Args:
+            X (n x p numpy matrix) : Data on which to compute
+            X_star (optional, n x p numpy matrix) : Second dataset
+        """
+
+        if X_star.shape[0]:
+            K_ = distance_matrix(X, X_star)
+        else:
+            K_ = distance_matrix(X, X)
+
+        K_ =  (1 + K_ ** 2 / (2*self.alpha * self.lengthscale**2))**(-self.alpha)
+
+        return (self.var**2)*K_
+
+    def set_values(self, values):
+        """Compute Updates kernel for Periodic Kernel"""
+
+        kernel = RQ(values[0], values[1], values[2])
+        return kernel
+
+    def get_values(self):
+        """Return the parameters of the kernel"""
+        return [self.lengthscale, self.alpha, self.var]

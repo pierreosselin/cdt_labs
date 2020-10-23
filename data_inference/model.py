@@ -1,8 +1,9 @@
 """Module for Gaussian Process Model"""
 import numpy as np
-from scipy.linalg import cho_solve, cho_factor
+import scipy
 from scipy.optimize import minimize
 from utils import extend_list
+from tqdm import tqdm
 
 class GaussianProcess():
     """Implementation of the Gaussian Process Model for Regression"""
@@ -62,7 +63,7 @@ class GaussianProcess():
         K_Xstar_X = self.kernel.compute_covariance(X_star, self.X)
         f_star_mean = K_Xstar_X.dot(self.alpha)
 
-        self.v = self.L_inv.dot(K_Xstar_X.T)
+        self.v = scipy.linalg.solve_triangular(self.L, K_Xstar_X.T, lower = True)
 
         f_star_cov = self.kernel.compute_covariance(X_star) - self.v.T.dot(self.v)
 
@@ -199,7 +200,29 @@ class GaussianProcess():
         return optimal_values
 
 
-    def sequential_prediction(self, data, observation):
+    def sequential_prediction(self, t_train, observation):
         """Prediction of the observation in a sequential manner
+
+        Args:
+            data (n x 1 array) : Data Points
+            observation (n x 1 array) : Vector of observation
+
         TO DO : Optimize complexity
         """
+        n = t_train.shape[0]
+        mean_predictive_sequence = []
+        var_predictive_sequence = []
+        t_test_final = []
+        for i in tqdm(range(1, n-1)):
+            data_seq = t_train[:i]
+            observation_seq = observation[:i]
+
+            # Take linspace of the two data points
+            t_test_seq = np.linspace(t_train[i], t_train[i+1,], int(100*(t_train[i+1] - t_train[i])))
+
+            self.fit(data_seq, observation_seq)
+            result_seq = self.predict(t_test_seq)
+            mean_predictive_sequence += list(result_seq[0])
+            var_predictive_sequence += list(np.diag(result_seq[1]))
+            t_test_final += list(t_test_seq)
+        return np.array(t_test_final), np.array(mean_predictive_sequence), np.diag(var_predictive_sequence)
