@@ -37,7 +37,6 @@ class GaussianProcess():
         self.X = data
 
         K_noise = self.kernel.compute_covariance(data) + (self.noise**2)*np.eye(data.shape[0])
-
         self.L = np.linalg.cholesky(K_noise)
 
         self.alpha = scipy.linalg.solve_triangular(self.L.T, scipy.linalg.solve_triangular(self.L, self.y, lower = True), lower = False)

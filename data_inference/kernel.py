@@ -127,7 +127,7 @@ class Periodic(Kernel):
 
     """
 
-    def __init__(self, l = 1., p = 1., var = 1.):
+    def __init__(self, l = 0.1, p = 0.5, var = 1.):
         super().__init__()
         self.lengthscale = l
         self.period = p
@@ -173,7 +173,7 @@ class Matern(Kernel):
 
     """
 
-    def __init__(self, l = 1., mu = 1/2, var = 1.):
+    def __init__(self, l = 0.1, mu = 1/2, var = 1.):
         super().__init__()
         self.lengthscale = l
         self.mu = mu
@@ -197,19 +197,19 @@ class Matern(Kernel):
         part2 = (np.sqrt(2 * self.mu) * K_ / self.lengthscale) ** self.mu
         part3 = kv(self.mu, np.sqrt(2 * self.mu) * K_ / self.lengthscale)
         result = part1 * part2 * part3
-        np.fill_diagonal(result, 1.)
+        result = np.nan_to_num(result, nan = 1., copy = False)
         return ((self.var)**2) * result
 
     def set_values(self, values):
         """Compute Updates kernel for Periodic Kernel"""
 
-        kernel = Periodic(values[0], values[1], values[2])
+        kernel = Matern(values[0], values[1], values[2])
         return kernel
 
     def get_values(self):
         """Return the parameters of the kernel"""
 
-        return [self.lengthscale, self.period, self.var]
+        return [self.lengthscale, self.mu, self.var]
 
 class RQ(Kernel):
     """Instantiate a Rational Quadratic Kernel
