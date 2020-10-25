@@ -196,7 +196,9 @@ class Matern(Kernel):
         part1 = 2 ** (1 - self.mu) / gamma(self.mu)
         part2 = (np.sqrt(2 * self.mu) * K_ / self.lengthscale) ** self.mu
         part3 = kv(self.mu, np.sqrt(2 * self.mu) * K_ / self.lengthscale)
-        return ((self.var)**2) * part1 * part2 * part3
+        result = part1 * part2 * part3
+        np.fill_diagonal(result, 1.)
+        return ((self.var)**2) * result
 
     def set_values(self, values):
         """Compute Updates kernel for Periodic Kernel"""
@@ -222,7 +224,7 @@ class RQ(Kernel):
     def __init__(self, l = 1., alpha = 1., var = 1.):
         super().__init__()
         self.lengthscale = l
-        self.alpha = l
+        self.alpha = alpha
         self.var = var
         self.n_params = 3
 

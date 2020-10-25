@@ -1,7 +1,7 @@
 """Module for Util Functions"""
 import numpy as np
 
-def transform_time_day(el):
+def transform_time_day(list_el):
     def _aux(el):
         sp = el.split("T")
         date = sp[0]

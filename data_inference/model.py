@@ -40,8 +40,7 @@ class GaussianProcess():
 
         self.L = np.linalg.cholesky(K_noise)
 
-
-        self.alpha = np.linalg.solve(self.L.T, np.linalg.solve(self.L, self.y))
+        self.alpha = scipy.linalg.solve_triangular(self.L.T, scipy.linalg.solve_triangular(self.L, self.y, lower = True), lower = False)
 
 
     def predict(self, X_star):
@@ -57,8 +56,6 @@ class GaussianProcess():
         """
         if len(X_star.shape) == 1:
             X_star = X_star.reshape(-1,1)
-
-        self.L_inv = np.linalg.pinv(self.L)
 
         K_Xstar_X = self.kernel.compute_covariance(X_star, self.X)
         f_star_mean = K_Xstar_X.dot(self.alpha)
@@ -86,63 +83,7 @@ class GaussianProcess():
         m_log_likelihood = 0.5 * k * np.log(2*np.pi) + 0.5 * np.linalg.det(f_star_cov) + 0.5 * (y_true_test - f_star_mean).T.dot(np.linalg.pinv(f_star_cov).dot(y_true_test - f_star_mean))
         return m_log_likelihood
 
-    def optimize(self, initial_values = [], bounds = None):
-        """Optimize the model hyperparameters with the given kernel form
-        Args:
-            - initial_values (Optional, list or array): initial values for optimization,
-            if not specified : take the kernel Hyperparameters
-            - bounds (Optional, List of couples) : bounds for each parameters,
-            if a None values are given, then the corresponding parameters
-            are fixed during optimization
-        """
-
-        def obj(values):
-            kernel = self.kernel.set_values(values[:(-1)])
-            model = GaussianProcess(kernel, noise = values[-1])
-
-            try:
-                model.fit(self.X, self.y)
-                assessment = model.log_marginal_likelihood()
-            except Exception as e:
-                print("The following parameters failed:", values)
-                print(e)
-                assessment = np.inf
-            return assessment
-
-        if len(initial_values) == 0:
-            initial_values = self.kernel.get_values()
-            initial_values.append(self.noise)
-
-
-        initial_vector = initial_values
-        extend = lambda x : x
-
-        if bounds is not None:
-            trainable_parameters_index = np.array([i for i, el in enumerate(bounds) if el is not None])
-            if len(trainable_parameters_index) != len(initial_values):
-                print("Fixing parameters...")
-                extend = extend_list(trainable_parameters_index, np.array(initial_values))
-                initial_vector = np.array(initial_values)[trainable_parameters_index]
-                bounds = [bounds[i] for i in trainable_parameters_index]
-
-        objective = lambda x : obj(extend(x))
-
-        result = minimize(objective, initial_vector, method='L-BFGS-B', bounds = bounds)
-        print("-----Result Optimization-----")
-        print("Convergence:", result["success"])
-        print("Value Log Marginal Likelihood:", -result["fun"])
-
-        optimal_values = extend(result["x"])
-        print("Value Parameters:", optimal_values)
-
-        self.kernel = self.kernel.set_values(optimal_values[:(-1)])
-        self.noise = optimal_values[-1]
-        self.fit(self.X, self.y)
-
-        return optimal_values
-
-
-    def optimize_log(self, initial_values = [], bounds = None):
+    def optimize(self, initial_values = [], bounds = None, optimize_noise = False, verbose = 0, random = False):
         """Optimize the model hyperparameters with the given kernel form in log space
         Args:
                 initial_values (Optional, list or array): initial values for optimization,
@@ -153,10 +94,16 @@ class GaussianProcess():
             are fixed during optimization
         """
 
-        def obj(values):
-            kernel = self.kernel.set_values(values[:(-1)])
-            model = GaussianProcess(kernel, noise = values[-1])
+        """Test"""
 
+
+        def obj(values):
+            if optimize_noise:
+                kernel = self.kernel.set_values(values[:(-1)])
+                model = GaussianProcess(kernel, noise = values[-1])
+            else:
+                kernel = self.kernel.set_values(values)
+                model = GaussianProcess(kernel, noise = self.noise)
             try:
                 model.fit(self.X, self.y)
                 assessment = model.log_marginal_likelihood()
@@ -168,10 +115,14 @@ class GaussianProcess():
 
         if len(initial_values) == 0:
             initial_values = self.kernel.get_values()
-            initial_values.append(self.noise)
+            if optimize_noise:
+                initial_values.append(self.noise)
 
-
-        initial_vector = initial_values
+        if random:
+            print("Random Optimization")
+            initial_vector = np.exp(np.random.uniform(-1, 1, len(initial_values)))
+        else:
+            initial_vector = initial_values
         extend = lambda x : x
 
         if bounds is not None:
@@ -186,43 +137,66 @@ class GaussianProcess():
         objective = lambda x : obj(extend(np.exp(x)))
 
         result = minimize(objective, np.log(initial_vector), method='L-BFGS-B', bounds = bounds)
-        print("-----Result Optimization-----")
-        print("Convergence:", result["success"])
-        print("Value Log Marginal Likelihood:", -result["fun"])
+
 
         optimal_values = extend(np.exp(result["x"]))
-        print("Value Parameters:", optimal_values)
 
-        self.kernel = self.kernel.set_values(optimal_values[:(-1)])
-        self.noise = optimal_values[-1]
+        if verbose:
+            print("-----Result Optimization-----")
+            print("Convergence:", result["success"])
+            print("Value Log Marginal Likelihood:", -result["fun"])
+            print("Value Parameters:", optimal_values)
+
+        if optimize_noise:
+            self.kernel = self.kernel.set_values(optimal_values[:(-1)])
+            self.noise = optimal_values[-1]
+        else:
+            self.kernel = self.kernel.set_values(optimal_values)
+
         self.fit(self.X, self.y)
 
-        return optimal_values
+        return optimal_values, -result["fun"]
 
 
-    def sequential_prediction(self, t_train, observation):
+    def sequential_prediction(self, t_test, lookahead = 1., split = None, optimization = False, **kwargs):
         """Prediction of the observation in a sequential manner
-
+        If split is given, the learning is sequential by block of split,
+        if split is None the prediction is sequential via lookahead.
+        Implemented for 1d training data
         Args:
-            data (n x 1 array) : Data Points
+            GaussianProcess: Model
             observation (n x 1 array) : Vector of observation
 
-        TO DO : Optimize complexity
+        TO DO : Put a split option / Sequential Optimisation Option
         """
-        n = t_train.shape[0]
-        mean_predictive_sequence = []
-        var_predictive_sequence = []
-        t_test_final = []
-        for i in tqdm(range(1, n-1)):
-            data_seq = t_train[:i]
-            observation_seq = observation[:i]
+        t_train, observation = self.X.flatten(), self.y.flatten()
+        mean_predictive_sequence, var_predictive_sequence = np.array([]), np.array([])
 
-            # Take linspace of the two data points
-            t_test_seq = np.linspace(t_train[i], t_train[i+1,], int(100*(t_train[i+1] - t_train[i])))
+        if split is None:
+            split = len(t_test)
+        else:
+            lookahead = 0.
+
+        t_test = np.split(t_test, split)
+
+        #For optimization we want to restart at the initial kernel
+        initial_kernel = self.kernel
+
+        for t in tqdm(t_test[1:]):
+            data_seq = t_train[t_train <= t[0] - lookahead]
+            observation_seq = observation[t_train <= t[0] - lookahead]
 
             self.fit(data_seq, observation_seq)
-            result_seq = self.predict(t_test_seq)
-            mean_predictive_sequence += list(result_seq[0])
-            var_predictive_sequence += list(np.diag(result_seq[1]))
-            t_test_final += list(t_test_seq)
-        return np.array(t_test_final), np.array(mean_predictive_sequence), np.diag(var_predictive_sequence)
+
+            if optimization:
+                self.kernel = initial_kernel
+                self.optimize(**kwargs)
+
+            result_seq = self.predict(t)
+
+            mean_predictive_sequence = np.concatenate((mean_predictive_sequence, result_seq[0]))
+            var_predictive_sequence = np.concatenate((var_predictive_sequence, np.diag(result_seq[1])))
+
+
+
+        return mean_predictive_sequence, np.diag(var_predictive_sequence)
