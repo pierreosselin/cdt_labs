@@ -84,7 +84,7 @@ class RBF(Kernel):
         l : lengthscale
     """
 
-    def __init__(self, l = 1., var = 1.):
+    def __init__(self, l = 0.1, var = 0.1):
         super().__init__()
         self.lengthscale = l
         self.var = var
@@ -127,7 +127,7 @@ class Periodic(Kernel):
 
     """
 
-    def __init__(self, l = 0.1, p = 0.5, var = 1.):
+    def __init__(self, l = 0.5, p = 0.5, var = 1.):
         super().__init__()
         self.lengthscale = l
         self.period = p
@@ -221,7 +221,7 @@ class RQ(Kernel):
 
     """
 
-    def __init__(self, l = 1., alpha = 1., var = 1.):
+    def __init__(self, l = 1., alpha = 2., var = 1.):
         super().__init__()
         self.lengthscale = l
         self.alpha = alpha

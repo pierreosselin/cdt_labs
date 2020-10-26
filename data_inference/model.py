@@ -41,7 +41,6 @@ class GaussianProcess():
 
         self.alpha = scipy.linalg.solve_triangular(self.L.T, scipy.linalg.solve_triangular(self.L, self.y, lower = True), lower = False)
 
-
     def predict(self, X_star):
         """
         Predict the posterior mean and covariance function.
@@ -93,9 +92,6 @@ class GaussianProcess():
             are fixed during optimization
         """
 
-        """Test"""
-
-
         def obj(values):
             if optimize_noise:
                 kernel = self.kernel.set_values(values[:(-1)])
@@ -118,8 +114,7 @@ class GaussianProcess():
                 initial_values.append(self.noise)
 
         if random:
-            print("Random Optimization")
-            initial_vector = np.exp(np.random.uniform(-1, 1, len(initial_values)))
+            initial_vector = np.exp(np.random.uniform(-2, 0, len(initial_values)))
         else:
             initial_vector = initial_values
         extend = lambda x : x
@@ -154,10 +149,10 @@ class GaussianProcess():
 
         self.fit(self.X, self.y)
 
-        return optimal_values, -result["fun"]
+        return result, -result["fun"]
 
 
-    def sequential_prediction(self, t_test, lookahead = 1., split = None, optimization = False, **kwargs):
+    def sequential_prediction(self, t_test, lookahead = 1./24., split = None, optimization = False, random_initialization = False, **kwargs):
         """Prediction of the observation in a sequential manner
         If split is given, the learning is sequential by block of split,
         if split is None the prediction is sequential via lookahead.
@@ -169,7 +164,7 @@ class GaussianProcess():
         TO DO : Put a split option / Sequential Optimisation Option
         """
         t_train, observation = self.X.flatten(), self.y.flatten()
-        mean_predictive_sequence, var_predictive_sequence = np.array([]), np.array([])
+        mean_predictive_sequence = np.array([])
 
         if split is None:
             split = len(t_test)
@@ -178,24 +173,42 @@ class GaussianProcess():
 
         t_test = np.split(t_test, split)
 
-        #For optimization we want to restart at the initial kernel
+        #For optimization we want to restart at the initial kernel by default
         initial_kernel = self.kernel
 
-        for t in tqdm(t_test[1:]):
+        if random_initialization:
+            initial_values = self.kernel.get_values()
+            initial_vector = np.exp(np.random.uniform(-2, 0, len(initial_values)))
+            self.kernel = self.kernel.set_values(initial_vector)
+
+
+        for i,  t in tqdm(enumerate(t_test[1:])):
             data_seq = t_train[t_train <= t[0] - lookahead]
             observation_seq = observation[t_train <= t[0] - lookahead]
 
             self.fit(data_seq, observation_seq)
 
             if optimization:
-                self.kernel = initial_kernel
-                self.optimize(**kwargs)
+                if not random_initialization:
+                    #With random initialization, we keep the previous kernel
+                    self.kernel = initial_kernel
+                result, _ = self.optimize(**kwargs)
+                convergence = result["success"]
+                while not convergence:
+
+                    print("Re Optimizing")
+                    print(kwargs)
+                    result, _ = self.optimize(**kwargs, random = True)
+                    convergence = result["success"]
 
             result_seq = self.predict(t)
 
             mean_predictive_sequence = np.concatenate((mean_predictive_sequence, result_seq[0]))
-            var_predictive_sequence = np.concatenate((var_predictive_sequence, np.diag(result_seq[1])))
+            if i == 0:
+                var_predictive_sequence = result_seq[1]
+            else :
+                var_predictive_sequence = scipy.linalg.block_diag(var_predictive_sequence, result_seq[1])
 
 
 
-        return mean_predictive_sequence, np.diag(var_predictive_sequence)
+        return mean_predictive_sequence, var_predictive_sequence
